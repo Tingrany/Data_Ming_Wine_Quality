@@ -1,0 +1,608 @@
+---
+title: "Project Stats Learning"
+author: "Tingran Yang - ty2362, Zihao Zhou - zz2510"
+date: "9, May 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+Part 1 is a system using cross validation in the variable selection. Here we give the example for NN.
+
+```{r}
+setwd("d:/60933/Documents/Columbia/Courses/Stats Learning/final")
+library("rminer")
+library("stats")
+red <- read.table('winequality-red.csv', header = T, sep = ';')
+red.para <- data.frame(scale(subset(red, select = -12)))
+train <- data.frame(c(red.para, red[12]))
+
+# Hyper parameters selection
+hyper = c(0,1,2,3,4,5,6,7,8,9,10,11)
+sigma = c(2^-15,2^-13,2^-11,2^-9,2^-7,2^-5,2^-3,2^-1,2^1,2^3)
+
+parsimony_nn <- function(data, hyper){
+  
+  delete = c()
+  while (ncol(data) > 1){
+    prev <- 0
+    para.best <- 0
+    # 
+    for (para in hyper){
+      evaluation <- cv.train(data, "mlp", para)
+      #model <- test.mlp.model.mod(train.set, test.set, para)
+      if (evaluation < prev){
+        break
+      }else{
+        prev <- evaluation
+        para.best <- para
+      }
+    }
+    
+    
+    #Remove it from the data
+    
+    indMin <- cv.CalR(data, "mlp", para.best)
+    append(delete,indMin)
+    # Remove it from the data
+    data.new <- subset(data, select = -indMin)
+    #test.new <- subset(test.set, select = -indMin)
+    
+    evaluation <- cv.train(data.new, "mlp", para.best)
+    # model <- test.mlp.model.mod(train.new, test.new, para.best)
+    
+    if (evaluation >= prev){
+      data <- data.new
+      #test.set <- test.new
+    }else{
+      res <- list(colnames(data), para.best, prev, delete)
+      return (res)
+    }
+    
+  }
+}
+
+################################
+
+test.mlp.model.mod <- function(train, test, para){
+  mod <- fit(quality~., data = train, model = 'mlp', size = para)
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (mod)
+}
+
+
+test.mlp.model.eva <- function(train, test, para){
+  mod <- fit(quality~., data = train, model = 'mlp', size = para)
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (evaluation)
+}
+
+cv.train <- function(data, model, para) {
+  if (model == "mlp"){
+    M=crossvaldata(quality~.,data,fit,predict,ngroup=10,seed=1234,model= "mlp", size = para,
+               task="reg", control = rpart::rpart.control(cp=0.05))
+  }
+  if (model == "svm"){
+    M=crossvaldata(quality~.,data,fit,predict,ngroup=10,seed=1234,model= "svm", sigma = para,
+               task="reg", control = rpart::rpart.control(cp=0.05))
+  }
+  if (model == "mr"){
+    M=crossvaldata(quality~.,data,fit,predict,ngroup=10,seed=1234,model= "mr",
+               task="reg", control = rpart::rpart.control(cp=0.05))
+  }
+  if (model == "ctree"){
+    M=crossvaldata(quality~.,data,fit,predict,ngroup=10,seed=1234,model= "ctree",
+               task="reg", control = rpart::rpart.control(cp=0.05))
+  }
+  pred.cv <- round(M$cv.fit)
+  precision <- length(pred.cv[pred.cv == data$quality]) / nrow(data)
+  return (precision)
+}
+
+cv.CalR <- function(data, model, para){
+  
+  data.predictor <- data[,-ncol(data)]
+  
+  mean <- apply(data.predictor, 2, mean)
+  var <- c()
+  for (i in 1 : ncol(data.predictor)){
+    # Only keep the ith column
+    data.temp <- data.predictor
+    for (j in 1 : ncol(data.predictor)){
+      if (j != i){
+        data.temp[j] <- mean[j]
+      }
+    }
+    #print(nrow(data.temp))
+    data.temp <- data.frame(c(data.temp, data['quality']))
+    #print(ncol(data.temp))
+    #print(data.temp$quality)
+    
+    # predict the data and calculate the variance
+    if (model == "mlp"){
+      M=crossvaldata(quality~.,data.temp,fit,predict,ngroup=10,seed=1234,model= "mlp", size = para,
+               task="reg", control = rpart::rpart.control(cp=0.05))
+    }
+    if (model == "svm"){
+      M=crossvaldata(quality~.,data.temp,fit,predict,ngroup=10,seed=1234,model= "svm", sigma = para,
+               task="reg", control = rpart::rpart.control(cp=0.05))
+    }
+    if (model == "mr"){
+      M=crossvaldata(quality~.,data.temp,fit,predict,ngroup=10,seed=1234,model= "mr",
+               task="reg", control = rpart::rpart.control(cp=0.05))
+    }
+    if (model == "ctree"){
+      M=crossvaldata(quality~.,data,fit,predict,ngroup=10,seed=1234,model= "ctree",
+               task="reg", control = rpart::rpart.control(cp=0.05))
+    }
+    pred <- M$cv.fit
+    var.elem <- sum((pred - mean(pred))^2) / (length(pred) - 1)
+    # append variance into the list
+    var[i] <- var.elem
+  }
+  #
+  return (which.min(var))
+  #return(var)
+}
+##############################
+
+rednn <- parsimony_nn(train, hyper)
+
+rednn
+
+```
+
+## Including Plots
+
+Part 2 is the variable selection mentioned in the paper for NN, SVM and MR. 
+
+```{r}
+setwd("d:/60933/Documents/Columbia/Courses/Stats Learning/final")
+library("rminer")
+library("stats")
+red <- read.table('winequality-red.csv', header = T, sep = ';')
+red.para <- data.frame(scale(subset(red, select = -12)))
+train <- data.frame(c(red.para, red[12]))
+
+red.model <- fit(quality~., data = train, model = 'mlp', size = 5)
+red.model2 <- fit(quality~., data = train, model = 'svm')
+
+# Hyper parameters selection
+hyper = c(0,1,2,3,4,5,6,7,8,9,10,11)
+sigma = c(2^-15,2^-13,2^-11,2^-9,2^-7,2^-5,2^-3,2^-1,2^1,2^3)
+
+parsimony_mr <- function(data){
+  
+  # Split train and test
+  index <- holdout(data$quality, ratio = 2/3, internalsplit = TRUE , seed = 1234)
+  train.set <- train[index$tr,]
+  test.set <- train[index$ts,]
+  delete = c()
+  while (ncol(train.set) > 1){
+    prev <- 0
+    # 
+    evaluation <- test.mr.model.eva(train.set, test.set)
+    model <- test.mr.model.mod(train.set, test.set)
+    prev <- evaluation
+    if (evaluation >= prev){
+      prev <- evaluation
+    }
+    
+    
+    #Remove it from the data
+    indMin <- CalR(model, test.set, train.set)
+    append(delete,indMin)
+    # Remove it from the data
+    train.new <- subset(train.set, select = -indMin)
+    test.new <- subset(test.set, select = -indMin)
+    
+    evaluation <- test.mr.model.eva(train.new, test.new)
+    # model <- test.mlp.model.mod(train.new, test.new, para.best)
+    
+    if (evaluation >= prev){
+      train.set <- train.new
+      test.set <- test.new
+    }else{
+      res <- list(colnames(train.set), prev, delete)
+      return (res)
+    }
+    
+  }
+}
+
+
+
+
+
+parsimony_svm <- function(data, sigma){
+  
+  # Split train and test
+  index <- holdout(data$quality, ratio = 2/3, internalsplit = TRUE , seed = 1234)
+  train.set <- train[index$tr,]
+  test.set <- train[index$ts,]
+  delete = c()
+  while (ncol(train.set) > 1){
+    prev <- 0
+    para.best <- 0
+    # 
+    for (para in sigma){
+      evaluation <- test.svm.model.eva(train.set, test.set, para)
+      model <- test.svm.model.mod(train.set, test.set, para)
+      if (evaluation < prev){
+        break
+      }else{
+        prev <- evaluation
+        para.best <- para
+      }
+    }
+    
+    
+    #Remove it from the data
+    indMin <- CalR(model, test.set, train.set)
+    append(delete,indMin)
+    # Remove it from the data
+    train.new <- subset(train.set, select = -indMin)
+    test.new <- subset(test.set, select = -indMin)
+    
+    evaluation <- test.svm.model.eva(train.new, test.new, para.best)
+    # model <- test.mlp.model.mod(train.new, test.new, para.best)
+    
+    if (evaluation >= prev){
+      train.set <- train.new
+      test.set <- test.new
+    }else{
+      res <- list(colnames(train.set), para.best, prev, delete)
+      return (res)
+    }
+    
+  }
+}
+
+
+
+
+parsimony_nn <- function(data, hyper){
+  
+  # Split train and test
+  index <- holdout(data$quality, ratio = 2/3, internalsplit = TRUE , seed = 1234)
+  train.set <- train[index$tr,]
+  test.set <- train[index$ts,]
+  delete = c()
+  while (ncol(train.set) > 1){
+    prev <- 0
+    para.best <- 0
+    # 
+    for (para in hyper){
+      evaluation <- test.mlp.model.eva(train.set, test.set, para)
+      model <- test.mlp.model.mod(train.set, test.set, para)
+      if (evaluation < prev){
+        break
+      }else{
+        prev <- evaluation
+        para.best <- para
+      }
+    }
+    
+    
+    #Remove it from the data
+    
+    indMin <- CalR(model, test.set, train.set)
+    append(delete,indMin)
+    # Remove it from the data
+    train.new <- subset(train.set, select = -indMin)
+    test.new <- subset(test.set, select = -indMin)
+    
+    evaluation <- test.mlp.model.eva(train.new, test.new, para.best)
+    # model <- test.mlp.model.mod(train.new, test.new, para.best)
+    
+    if (evaluation >= prev){
+      train.set <- train.new
+      test.set <- test.new
+    }else{
+      res <- list(colnames(train.set), para.best, prev, delete)
+      return (res)
+    }
+    
+  }
+}
+
+##############################################
+test.mr.model.mod <- function(train, test){
+  mod <- fit(quality~., data = train, model = 'mr')
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (mod)
+}
+
+
+test.mr.model.eva <- function(train, test){
+  mod <- fit(quality~., data = train, model = 'svm')
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (evaluation)
+}
+
+
+##############################################
+
+
+
+
+##############################################
+test.svm.model.mod <- function(train, test, para){
+  mod <- fit(quality~., data = train, model = 'svm', sigma = para)
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (mod)
+}
+
+
+test.svm.model.eva <- function(train, test, para){
+  mod <- fit(quality~., data = train, model = 'svm', sigma = para)
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (evaluation)
+}
+##############################################
+
+
+
+##############################################
+
+test.mlp.model.mod <- function(train, test, para){
+  mod <- fit(quality~., data = train, model = 'mlp', size = para)
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (mod)
+}
+
+
+test.mlp.model.eva <- function(train, test, para){
+  mod <- fit(quality~., data = train, model = 'mlp', size = para)
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (evaluation)
+}
+##############################################
+
+
+CalR <- function(model, test, train){
+  
+  data <- rbind(test, train)
+  data.predictor <- data[,-ncol(test)]
+  
+  mean <- apply(data.predictor, 2, mean)
+  var <- c()
+  for (i in 1 : ncol(data.predictor)){
+    # Only keep the ith column
+    data.temp <- data.predictor
+    for (j in 1 : ncol(data.predictor)){
+      if (j != i){
+        data.temp[j] <- mean[j]
+      }
+    }
+
+    # predict the data and calculate the variance
+    pred <- predict(model, data.temp)
+    var.elem <- sum((pred - mean(pred))^2) / (length(pred) - 1)
+    # append variance into the list
+    var[i] <- var.elem
+  }
+  #
+  return (which.min(var))
+  #return(var)
+}
+
+res <- parsimony_nn(train, hyper)
+data <- train[res[1]]
+para <- res[2]
+model <- fit(quality~., data = data, model = 'mlp', size = para)
+M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+
+```
+
+
+Part 3 is to show the barplot of variable importance.
+```{r}
+test.mlp.model.mod <- function(train, test, para){
+  mod <- fit(quality~., data = train, model = 'mlp', size = para)
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (mod)
+}
+
+# This function returns the accuracy
+test.mlp.model.eva <- function(train, test, para){
+  mod <- fit(quality~., data = train, model = 'mlp', size = para)
+  #print(mod)
+  P1 <- predict(mod, test)
+  P <- round(P1)
+  M <- matrix(0,ncol = 10, nrow = 10)
+  for(i in 0:length(P1)){
+    M[P1[i],test$quality[i]] = 1 + M[P1[i],test$quality[i]]
+  }
+  evaluation <- sum(M[row(M) == col(M)]) / length(P1)
+  return (evaluation)
+}
+##############################################
+
+# This function returns the importance of each variable
+CalR <- function(model, test, train){
+  data <- rbind(test, train)
+  data.predictor <- data[,-ncol(test)]
+  mean <- apply(data.predictor, 2, mean)
+  var <- list()
+  for (i in 1 : ncol(data.predictor)){
+    data.temp <- data.predictor
+    for (j in 1 : ncol(data.predictor)){
+      if (j != i){
+        data.temp[j] <- mean[j]
+      }
+    }
+    pred <- predict(model, data.temp)
+    var.elem <- sum((pred - mean(pred))^2) / (length(pred) - 1)
+    
+    var[i] <- var.elem
+  }
+  return(var)
+}
+
+# 
+index <- holdout(train$quality, ratio = 2/3, internalsplit = TRUE, seed = 1234)
+train.set <- train[index$tr,]
+test.set <- train[index$ts,]
+
+model <- test.mlp.model.mod(train.set, test.set, 2)
+#print(evaluation)
+importance = CalR(model,test.set, train.set)
+importance
+# heights <- c(8.143958e-08,0.04271312,0.001049489,4.275529e-05,0.01391749,
+#         0.0006617805,0.03339764,0.003692345,0.02299146,0.03876881,0.1748224)
+heights <- c()
+for (i in 1 : length(importance)){
+  heights[i] <- unlist(importance[i][1])
+}
+# heights <- as.list(unlist(importance))
+heights
+name <- 1:11
+names(heights) <- name
+sorted.h <- sort(heights, decreasing = T)
+barplot(sorted.h, main = "Variable importance")
+```
+
+Part 4 is the plot of ROC, REC and confusion matrix. Notice that we have ploted a bunch of figures. The code just show the example of one.
+```{r}
+library(rminer)
+library(caret)
+library(klaR)
+df = read.table("winequality-red.csv", sep=";", header=T)
+df2 = scale(df[,-12]) #the whole scaled variables
+df2 = data.frame(df2)
+df = round(data.frame(c(df2,df[12])),2)
+
+H=holdout(df$quality,2/3,1)
+y=df[H$ts,]$quality
+#length(y)
+y_5 = c()
+for (i in 1:length(y)){
+  if (y[i] == 6){
+    y_5[i] <- 1
+  }else{
+    y_5[i] <- 0
+  }
+}
+#y_5
+#typeof(y)
+model = fit(quality~., df[,-5], model="mlp",size = 2)
+#df[H$tr,]
+#model = fit(quality~., df[H$tr,], model="mr")
+p = round(predict(model,df[H$ts,-12]))
+p_5 = c()
+
+for (i in 1:length(y)){
+  if (p[i]==6){
+    p_5[i] =1
+  }else{
+    p_5[i]=0
+  }
+}
+
+acc = mmetric(y,round(p),metric="ALL") ### WHY CAN'T I GET accuracy?????????????????????
+#print(acc)
+M <- matrix(0,ncol = 10, nrow = 10)
+
+for(i in 1:length(p)){
+  M[p[i],df$quality[i]] = 1 + M[p[i],df$quality[i]]
+}
+M
+acc = 0
+for(i in 1:10){
+  acc = acc + M[i,i]
+}
+
+
+library(pROC)
+modelroc <- roc(y_5,p_5)
+plot(modelroc, print.auc=TRUE, auc.polygon=TRUE, grid=c(0.1, 0.2),
+     grid.col=c("green", "red"), max.auc.polygon=TRUE,
+     auc.polygon.col="skyblue", print.thres=TRUE)
+#acc/length(pred.cv)
+
+
+M=crossvaldata(quality~.,train,fit,predict,ngroup=10,seed=1234,model= "mlp", size = 2,
+               task="reg", control = rpart::rpart.control(cp=0.05))
+
+pred.cv <- round(M$cv.fit)
+  precision <- length(pred.cv[pred.cv == train$quality]) / nrow(train)
+  print(precision)
+  
+pred.cv <- round(M$cv.fit)
+
+mgraph(y, predict(model,df[H$ts,-12]), "REC")
+
+
+
+```
+
